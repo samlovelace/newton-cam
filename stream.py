@@ -35,6 +35,27 @@ def wait_for_camera() -> cv2.VideoCapture:
 
 cap = wait_for_camera()
 
+########################## SERIAL ####################################
+import serial
+import serial.tools.list_ports
+
+def find_arduino() -> serial.Serial | None:
+    ports = serial.tools.list_ports.comports()
+    for port in ports:
+        if "Arduino" in (port.manufacturer or "") or \
+                (port.vid in (0x2341, 0x2A03, 0x1A86)):
+            print(f"Found Arduino on {port.device} ({port.description})")
+            return serial.Serial(port.device, 9600, timeout=1)
+    return None
+
+def send_cmd(ser: serial.Serial, cmd: str) -> None:
+    ser.write((cmd + '\n').encode())
+    print(f"Direction sent: {cmd}")
+
+comm = find_arduino()
+
+#######################################################################
+
 def check_auth(request: Request) -> bool:
     auth = request.headers.get("Authorization")
     if not auth or not auth.startswith("Basic "):
@@ -81,5 +102,17 @@ def index(request: Request):
         return require_auth(request)
     with open("static/index.html") as f:
         return f.read()
+    
+@app.post("/action/{cmd}")
+def action(cmd: str, request: Request):
+    if not check_auth(request):
+        return require_auth(request)
+    print(f"Received command: {cmd}")
+    
+    if comm and comm.is_open:
+        send_cmd(comm, cmd)
+    
+    return {"status": "ok", "command": cmd}
+
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
